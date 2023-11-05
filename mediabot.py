@@ -35,7 +35,7 @@ async def ask_mistral(request, user_input, max_length, context_lvl = 2, system_m
             system_message = chat.content
         elif chat.role == "bot":
             if prev_output1 == "" and prev_output != "" and context_lvl > 1: prev_output1 = chat.content
-            if prev_output == "": prev_output = chat.content
+            if prev_output == "" and context_lvl > 0: prev_output = chat.content
         elif chat.role == "user":
             if prev_input1 == "" and prev_output1 != "": prev_input1 = chat.content
             if prev_input == "" and prev_output != "": prev_input = chat.content
@@ -278,6 +278,7 @@ class BotDefinitions(PoeBot):
         media_type = ""
         media_prompt = ""
         media_url = ""
+        media_caption = ""
         if len(mediaset) > 0:
             #filter out media items the user didn't want to seek
             if exclusions != []:
@@ -293,37 +294,45 @@ class BotDefinitions(PoeBot):
                 mediaset = newmediaset
             
             #randomly select a list of the remaining items
-            optioncount = min(9,len(mediaset))
+            optioncount = min(10,len(mediaset))
             mediaset = random.sample(mediaset,k=optioncount)
             
             #construct a prompt that gives the bot a choice of the selected items
-            optionprompt = f'User says: "{request.query[-1].content}"\nChoose one of the following {optioncount} response options (guess if you are unsure):'
-            for index, option in enumerate(mediaset, start=1):
+            optionprompt = ""
+            if len(request.query) > 1:
+                paragraphs = request.query[-2].content.split("\n")     
+                for paragraph in paragraphs:
+                    if paragraph != "": optionprompt = f'Last reply: {paragraph}\n\n'
+            
+            optionprompt = f'{optionprompt}User says: "{request.query[-1].content}"\n\nPick one of the following {optioncount} options:'
+            for index, option in enumerate(mediaset, start=0):
                 optionprompt = f"{optionprompt}\n{index} - {option[1]}"
             
             #ask mistral to choose the best option
             print(optionprompt)
-            response_text = await ask_mistral(request, optionprompt, 400, 1, CHOOSING_PROMPT)
+            response_text = await ask_mistral(request, optionprompt, 400, 0, CHOOSING_PROMPT)
             print(response_text) #for testing purposes
             
             #get the details of the option mistral picked
             media_index = 0
-            if "1" in response_text: media_index = 0
-            elif "2" in response_text: media_index = 1
-            elif "3" in response_text: media_index = 2
-            elif "4" in response_text: media_index = 3
-            elif "5" in response_text: media_index = 4
-            elif "6" in response_text: media_index = 5
-            elif "7" in response_text: media_index = 6
-            elif "8" in response_text: media_index = 7
-            elif "9" in response_text: media_index = 8
+            if "0" in response_text: media_index = 0
+            elif "1" in response_text: media_index = 1
+            elif "2" in response_text: media_index = 2
+            elif "3" in response_text: media_index = 3
+            elif "4" in response_text: media_index = 4
+            elif "5" in response_text: media_index = 5
+            elif "6" in response_text: media_index = 6
+            elif "7" in response_text: media_index = 7
+            elif "8" in response_text: media_index = 8
+            elif "9" in response_text: media_index = 9
             
             media_type = mediaset[media_index][0]
-            media_prompt = mediaset[media_index][1]
-            media_url = mediaset[media_index][2]
+            media_caption = mediaset[media_index][1]
+            media_prompt = mediaset[media_index][2]
+            media_url = mediaset[media_index][3]
                 
             #add media options to the prompt
-            if request.query[-1].content != "": request.query[-1].content = f'{request.query[-1].content}\n\n[Continue your the response, then describe "{media_prompt}" for the user]'
+            if request.query[-1].content != "": request.query[-1].content = f'{request.query[-1].content}\n\n[Respond normally. If possible, mention {media_prompt}.]'
             if "Image" not in media_type and "GIF" not in media_type: showimg = False
         
         #stream response from chatbot
@@ -351,7 +360,7 @@ class BotDefinitions(PoeBot):
         linkprefix = ""
         if showimg: linkprefix = "!"
         if media_url != "":
-            yield PartialResponse(text = f"{system_text}{response_text}\n\n{linkprefix}[{media_prompt} ({media_type})]({media_url})", is_replace_response = True)
+            yield PartialResponse(text = f"{system_text}{response_text}\n\n{linkprefix}[{media_caption} ({media_type})]({media_url})", is_replace_response = True)
             
     async def get_settings(self, setting: SettingsRequest) -> SettingsResponse:
 
